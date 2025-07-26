@@ -1,0 +1,405 @@
+/* Import Google Fonts - must be first */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Uncial+Antiqua&family=Alegreya:wght@400;500;700&display=swap');
+
+/* Parchment Theme for Path of Adventure */
+
+:root {
+  /* Color palette inspired by aged parchment and medieval aesthetics */
+  --parchment-light: #f4e8d0;
+  --parchment-base: #e8dcc3;
+  --parchment-dark: #d4c4a0;
+  --parchment-shadow: #b8a47d;
+  --ink-black: #2c2416;
+  --ink-brown: #4a3c2a;
+  --gold-accent: #d4af37;
+  --ruby-red: #8b0000;
+  --emerald-green: #2e5e3e;
+  --sapphire-blue: #1e3a5f;
+  
+  /* Fonts */
+  --font-medieval: 'Cinzel', 'Georgia', serif;
+  --font-script: 'Uncial Antiqua', 'Georgia', serif;
+  --font-body: 'Alegreya', 'Georgia', serif;
+  
+  /* Shadows and effects */
+  --box-shadow-parchment: 
+    inset 0 0 40px rgba(184, 164, 125, 0.3),
+    0 4px 12px rgba(44, 36, 22, 0.4);
+  --text-shadow-title: 2px 2px 4px rgba(44, 36, 22, 0.5);
+  --border-worn: 2px solid var(--parchment-shadow);
+}
+
+/* Global styles */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-body);
+  color: var(--ink-black);
+  background-color: #1a1a1a;
+  overflow: hidden;
+}
+
+/* Parchment paper effect */
+.parchment {
+  background: linear-gradient(
+    135deg,
+    var(--parchment-light) 0%,
+    var(--parchment-base) 50%,
+    var(--parchment-dark) 100%
+  );
+  position: relative;
+  border-radius: 8px;
+  box-shadow: var(--box-shadow-parchment);
+  overflow: hidden;
+}
+
+.parchment::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(184, 164, 125, 0.05) 10px,
+      rgba(184, 164, 125, 0.05) 20px
+    );
+  pointer-events: none;
+}
+
+/* Worn edges effect */
+.parchment-worn {
+  position: relative;
+  padding: 24px;
+}
+
+.parchment-worn::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M0,50 Q5,45 10,50 T20,50 T30,50 T40,50 T50,50 T60,50 T70,50 T80,50 T90,50 T100,50 L100,100 L0,100 Z" fill="%23b8a47d" opacity="0.3"/></svg>');
+  background-size: 100px 10px;
+  background-repeat: repeat-x;
+  background-position: bottom;
+  pointer-events: none;
+}
+
+/* Title styles */
+.title-medieval {
+  font-family: var(--font-medieval);
+  font-weight: 600;
+  color: var(--ink-brown);
+  text-shadow: var(--text-shadow-title);
+  margin: 0;
+  letter-spacing: 2px;
+}
+
+.title-script {
+  font-family: var(--font-script);
+  color: var(--gold-accent);
+  text-shadow: 1px 1px 2px var(--ink-black);
+}
+
+/* Button styles */
+.btn-parchment {
+  background: linear-gradient(
+    to bottom,
+    var(--parchment-light) 0%,
+    var(--parchment-base) 100%
+  );
+  border: var(--border-worn);
+  color: var(--ink-brown);
+  font-family: var(--font-medieval);
+  font-weight: 500;
+  padding: 12px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(44, 36, 22, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-parchment:hover {
+  background: linear-gradient(
+    to bottom,
+    var(--parchment-base) 0%,
+    var(--parchment-dark) 100%
+  );
+  box-shadow: 0 4px 8px rgba(44, 36, 22, 0.3);
+  transform: translateY(-2px);
+}
+
+.btn-parchment:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(44, 36, 22, 0.2);
+}
+
+.btn-parchment::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: radial-gradient(circle, var(--gold-accent) 0%, transparent 70%);
+  transform: translate(-50%, -50%);
+  transition: width 0.3s ease, height 0.3s ease;
+  opacity: 0.3;
+}
+
+.btn-parchment:hover::before {
+  width: 100%;
+  height: 100%;
+}
+
+/* Tab navigation styles */
+.tab-navigation {
+  display: flex;
+  gap: 8px;
+  border-bottom: 2px solid var(--parchment-shadow);
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+}
+
+.tab-button {
+  background: transparent;
+  border: none;
+  color: var(--ink-brown);
+  font-family: var(--font-medieval);
+  font-size: 16px;
+  padding: 8px 16px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.tab-button::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  width: 0;
+  height: 3px;
+  background: var(--gold-accent);
+  transform: translateX(-50%);
+  transition: width 0.3s ease;
+}
+
+.tab-button:hover {
+  color: var(--gold-accent);
+}
+
+.tab-button.active {
+  color: var(--gold-accent);
+  font-weight: 600;
+}
+
+.tab-button.active::after {
+  width: 80%;
+}
+
+/* Scrollbar styling */
+.scroll-parchment {
+  scrollbar-width: thin;
+  scrollbar-color: var(--parchment-shadow) var(--parchment-light);
+}
+
+.scroll-parchment::-webkit-scrollbar {
+  width: 12px;
+}
+
+.scroll-parchment::-webkit-scrollbar-track {
+  background: var(--parchment-light);
+  border-radius: 6px;
+}
+
+.scroll-parchment::-webkit-scrollbar-thumb {
+  background: var(--parchment-shadow);
+  border-radius: 6px;
+  border: 2px solid var(--parchment-light);
+}
+
+.scroll-parchment::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-brown);
+}
+
+/* Animation keyframes */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -100% 0;
+  }
+  100% {
+    background-position: 100% 0;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--gold-accent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Cave backdrop styling */
+.cave-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+    radial-gradient(ellipse at top, #2c3e50 0%, #000000 100%),
+    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><defs><filter id="turbulence"><feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="5" result="turbulence"/><feColorMatrix in="turbulence" type="saturate" values="0"/></filter></defs><rect width="100%" height="100%" filter="url(%23turbulence)" opacity="0.1"/></svg>');
+  background-blend-mode: multiply;
+  z-index: -1;
+}
+
+/* Torch light effect */
+.torch-light {
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(
+    circle,
+    rgba(255, 200, 100, 0.4) 0%,
+    rgba(255, 150, 50, 0.2) 40%,
+    transparent 70%
+  );
+  pointer-events: none;
+  mix-blend-mode: screen;
+  animation: flicker 3s ease-in-out infinite;
+}
+
+@keyframes flicker {
+  0%, 100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* Icon styles */
+.icon {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+  fill: currentColor;
+}
+
+.icon-small {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-large {
+  width: 32px;
+  height: 32px;
+}
+
+/* Status effect icons */
+.status-icon {
+  position: relative;
+  display: inline-block;
+  margin: 0 4px;
+}
+
+.status-icon.buff {
+  filter: drop-shadow(0 0 4px var(--emerald-green));
+}
+
+.status-icon.debuff {
+  filter: drop-shadow(0 0 4px var(--ruby-red));
+}
+
+.status-icon.neutral {
+  filter: drop-shadow(0 0 4px var(--sapphire-blue));
+}
+
+/* Tooltip styles */
+.tooltip {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltip-content {
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink-black);
+  color: var(--parchment-light);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease;
+  z-index: 1000;
+}
+
+.tooltip-content::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--ink-black);
+}
+
+.tooltip:hover .tooltip-content {
+  opacity: 1;
+  visibility: visible;
+}

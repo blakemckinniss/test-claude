@@ -1,0 +1,16 @@
+{
+  "name": "claude-flow-swarm-test",
+  "version": "1.0.0",
+  "description": "Test game project managed by Claude Flow Swarm",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "echo \"No tests configured yet\"",
+    "dev": "node src/index.js --dev"
+  },
+  "keywords": ["claude-flow", "swarm", "ai-coordination"],
+  "author": "Claude Flow Swarm",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

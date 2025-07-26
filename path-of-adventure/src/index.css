@@ -1,0 +1,91 @@
+/* Tailwind CSS imports */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Root variables for theming */
+:root {
+  /* Game theme colors */
+  --color-primary: #4a90e2;
+  --color-secondary: #f39c12;
+  --color-danger: #e74c3c;
+  --color-success: #27ae60;
+  --color-dark: #2c3e50;
+  --color-light: #ecf0f1;
+  
+  /* Parchment theme colors for shadcn/ui integration */
+  --background: #1a1a1a;
+  --foreground: #f4e8d0;
+  --card: #d4c4a0;
+  --card-foreground: #2c2416;
+  --popover: #e8dcc3;
+  --popover-foreground: #2c2416;
+  --primary: #d4af37;
+  --primary-foreground: #2c2416;
+  --secondary: #d4c4a0;
+  --secondary-foreground: #2c2416;
+  --muted: #b8a47d;
+  --muted-foreground: #4a3c2a;
+  --accent: #d4af37;
+  --accent-foreground: #2c2416;
+  --destructive: #8b0000;
+  --destructive-foreground: #f4e8d0;
+  --border: #b8a47d;
+  --input: #d4c4a0;
+  --ring: #d4af37;
+  --radius: 0.5rem;
+  
+  --font-primary: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  --font-mono: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+    
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Base styles */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-dark);
+  color: var(--color-light);
+}
+
+code {
+  font-family: var(--font-mono);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}

@@ -1,0 +1,43 @@
+{
+  "serena": {
+    "mcp_commands": {
+      "find_symbol": "serena find",
+      "replace_symbol_body": "serena replace",
+      "get_symbols_overview": "serena overview",
+      "search_for_pattern": "serena search",
+      "restart_language_server": "serena restart",
+      "write_memory": "serena memory write",
+      "read_memory": "serena memory read",
+      "list_memories": "serena memory list",
+      "activate_project": "serena project activate",
+      "switch_modes": "serena mode"
+    },
+    "hints": {
+      "find_symbol": "Tip: Use wildcards for flexible symbol search",
+      "replace_symbol_body": "Tip: Preview changes before replacing",
+      "search_for_pattern": "Tip: Use regex for powerful pattern matching"
+    }
+  },
+  "claude_flow": {
+    "mcp_commands": {
+      "swarm_init": "npx claude-flow@alpha swarm init",
+      "agent_spawn": "npx claude-flow@alpha agent spawn",
+      "task_orchestrate": "npx claude-flow@alpha task orchestrate",
+      "swarm_status": "npx claude-flow@alpha swarm status",
+      "memory_usage": "npx claude-flow@alpha memory",
+      "neural_train": "npx claude-flow@alpha neural train",
+      "github_swarm": "npx claude-flow@alpha github swarm",
+      "repo_analyze": "npx claude-flow@alpha github analyze",
+      "workflow_create": "npx claude-flow@alpha workflow create",
+      "benchmark_run": "npx claude-flow@alpha benchmark",
+      "daa_agent_create": "npx claude-flow@alpha daa create",
+      "sparc_mode": "npx claude-flow@alpha sparc"
+    },
+    "hints": {
+      "swarm_init": "🧠 Auto-selecting optimal topology based on task complexity",
+      "agent_spawn": "🤖 Spawning specialized agent with cognitive patterns",
+      "task_orchestrate": "🎯 Breaking down complex task for parallel execution",
+      "neural_train": "🧠 Training neural patterns for improved coordination"
+    }
+  }
+}

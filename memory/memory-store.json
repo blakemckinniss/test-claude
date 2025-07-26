@@ -1,0 +1,10 @@
+{
+  "default": [
+    {
+      "key": "swarm/coordination/init-plan",
+      "value": "Game Engine Init, Project Setup, Claude Flow Integration - all three init types identified and ready for parallel execution",
+      "namespace": "default",
+      "timestamp": 1753465623634
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+# Performance-optimized dependencies for entry.py
+
+# Fast JSON parsing (10x faster than standard json)
+orjson>=3.9.0
+
+# Fast async event loop (2x faster than default asyncio)
+uvloop>=0.19.0
+
+# System and process monitoring
+psutil>=5.9.0
+
+# Optional: Additional performance libraries
+# numpy>=1.24.0  # For numerical computations
+# cython>=3.0.0  # For compiled Python extensions
