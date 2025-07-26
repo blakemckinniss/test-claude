@@ -12,12 +12,26 @@ import logging
 import sys
 import subprocess
 import os
+import time
+import hashlib
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Set
 
 # Add the hooks directory to the path
 hooks_dir = Path(__file__).parent
 sys.path.insert(0, str(hooks_dir))
+
+# Import deferred feedback system
+try:
+    from deferred_feedback import queue_feedback, deliver_queued_feedback, has_queued_feedback
+except ImportError:
+    # Fallback if deferred feedback system not available
+    def queue_feedback(message: str, priority: str = "normal", source: str = "post-edit") -> None:
+        pass
+    def deliver_queued_feedback() -> str:
+        return ""
+    def has_queued_feedback() -> bool:
+        return False
 
 # Setup logging
 logging.basicConfig(
@@ -26,18 +40,86 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def claude_feedback(message: str, block: bool = True) -> None:
+# State management to prevent feedback loops
+FEEDBACK_STATE_FILE = Path.home() / '.claude' / 'hooks_state.json'
+FEEDBACK_STATE_FILE.parent.mkdir(exist_ok=True)
+
+class FeedbackStateManager:
+    """Manages feedback state to prevent loops and repeated messages"""
+    
+    def __init__(self):
+        self.session_id = str(int(time.time()))
+        self.provided_feedback: Set[str] = set()
+        self.load_state()
+    
+    def load_state(self):
+        """Load previous feedback state"""
+        try:
+            if FEEDBACK_STATE_FILE.exists():
+                with open(FEEDBACK_STATE_FILE, 'r') as f:
+                    data = json.load(f)
+                    # Clear old sessions (older than 1 hour)
+                    current_time = time.time()
+                    if current_time - data.get('timestamp', 0) > 3600:
+                        self.provided_feedback = set()
+                    else:
+                        self.provided_feedback = set(data.get('feedback', []))
+        except Exception as e:
+            logger.warning(f"Could not load feedback state: {e}")
+            self.provided_feedback = set()
+    
+    def save_state(self):
+        """Save current feedback state"""
+        try:
+            data = {
+                'timestamp': time.time(),
+                'session_id': self.session_id,
+                'feedback': list(self.provided_feedback)
+            }
+            with open(FEEDBACK_STATE_FILE, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            logger.warning(f"Could not save feedback state: {e}")
+    
+    def should_provide_feedback(self, feedback_key: str) -> bool:
+        """Check if feedback should be provided based on recent history"""
+        return feedback_key not in self.provided_feedback
+    
+    def mark_feedback_provided(self, feedback_key: str):
+        """Mark that specific feedback has been provided"""
+        self.provided_feedback.add(feedback_key)
+        self.save_state()
+    
+    def create_feedback_key(self, hook_type: str, context: str) -> str:
+        """Create a unique key for this feedback context"""
+        content = f"{hook_type}:{context}"
+        return hashlib.md5(content.encode()).hexdigest()[:12]
+
+# Global state manager
+feedback_state = FeedbackStateManager()
+
+def claude_feedback(message: str, block: bool = True, feedback_key: str = None) -> None:
     """
     Send feedback directly to Claude that it can see and act upon.
+    
+    CRITICAL SAFETY: Use block=False for post-edit hooks to prevent API errors!
+    When block=True during tool execution, it can break tool_use/tool_result sequences.
     
     Args:
         message: Actionable feedback for Claude
         block: If True, uses exit code 2 (Claude sees stderr). If False, uses exit code 0.
+               WARNING: Use block=False for post-edit to prevent API sequence breaks!
+        feedback_key: Unique key to prevent duplicate feedback
     """
+    # CRITICAL: Don't check feedback_key here - it should be checked BEFORE calling this function
+    # This prevents infinite recursion and ensures proper deduplication timing
+    
     if block:
+        # WARNING: This can break Claude API if called during active tool sequences!
         print(message, file=sys.stderr)
         sys.exit(2)  # Claude sees this feedback and can act on it!
     else:
+        # SAFE: Informational only, doesn't break tool execution flow
         print(message)  # Goes to user only
         sys.exit(0)
 
@@ -94,6 +176,15 @@ def handle_pre_bash_enhanced(json_input):
     """Enhanced pre-bash hook with actionable Claude feedback"""
     command = json_input.get('tool_input', {}).get('command', '')
     logger.info(f"Pre-bash hook: validating command: {command[:100]}...")
+    
+    # 🚀 DELIVER DEFERRED FEEDBACK: Claude can see and act on queued suggestions before executing commands!
+    if has_queued_feedback():
+        feedback_message = deliver_queued_feedback()
+        if feedback_message:
+            claude_feedback(
+                feedback_message,
+                block=True  # SAFE: Pre-bash is perfect timing for Claude to see and act on feedback
+            )
     
     # Critical: Check for Claude Flow coordination
     if 'claude-flow' in command.lower():
@@ -172,6 +263,9 @@ def handle_post_bash_enhanced(json_input):
     
     logger.info(f"Post-bash hook: command completed: {command[:100]}...")
     
+    # Create feedback key to prevent duplicates
+    feedback_key = feedback_state.create_feedback_key('post-bash', f"{command[:50]}:{exit_code}")
+    
     # Handle failures with actionable advice
     if exit_code != 0:
         claude_feedback(
@@ -183,11 +277,13 @@ def handle_post_bash_enhanced(json_input):
             "2. Verify file paths exist\n"
             "3. Check permissions\n"
             "4. Use mcp__zen__debug for systematic debugging\n\n"
-            "Would you like me to analyze this failure and suggest fixes?"
+            "Would you like me to analyze this failure and suggest fixes?",
+            feedback_key=feedback_key
         )
     
-    # Suggest next steps for successful installations
+    # Suggest next steps for successful installations (only once per session)
     if exit_code == 0 and any(install in command for install in ['npm install', 'pip install', 'cargo install']):
+        install_key = feedback_state.create_feedback_key('post-bash', f"install-complete:{command}")
         claude_feedback(
             "✅ INSTALLATION COMPLETE\n\n"
             "Recommended next steps:\n"
@@ -195,11 +291,13 @@ def handle_post_bash_enhanced(json_input):
             "2. Check linting: npm run lint, flake8, or cargo clippy\n"
             "3. Update documentation if needed\n"
             "4. Consider adding to TodoWrite for tracking\n\n"
-            "Would you like me to run these verification steps?"
+            "Would you like me to run these verification steps?",
+            feedback_key=install_key
         )
     
-    # Handle test results
-    if 'test' in command.lower() and exit_code == 0:
+    # Handle test results - ONLY for actual test commands
+    if exit_code == 0 and any(test_cmd in command.lower() for test_cmd in ['npm test', 'pytest', 'cargo test', 'jest', 'mocha', 'vitest']):
+        test_key = feedback_state.create_feedback_key('post-bash', f"test-result:{command}")
         if 'passed' in stdout.lower() or 'ok' in stdout.lower():
             claude_feedback(
                 "✅ TESTS PASSED!\n\n"
@@ -208,7 +306,8 @@ def handle_post_bash_enhanced(json_input):
                 "2. Consider mcp__github__create_pr if ready\n"
                 "3. Run coverage reports if available\n"
                 "4. Deploy or merge changes\n\n"
-                "Ready to proceed with next phase?"
+                "Ready to proceed with next phase?",
+                feedback_key=test_key
             )
         else:
             claude_feedback(
@@ -218,11 +317,13 @@ def handle_post_bash_enhanced(json_input):
                 "2. Use mcp__zen__testgen for missing tests\n"
                 "3. Fix failures with targeted edits\n"
                 "4. Re-run tests to verify fixes\n\n"
-                "Would you like me to analyze the test failures?"
+                "Would you like me to analyze the test failures?",
+                feedback_key=test_key
             )
     
-    # Handle git operations
-    if 'git status' in command:
+    # Handle git status - be more specific
+    if command.strip() == 'git status':
+        git_key = feedback_state.create_feedback_key('post-bash', 'git-status')
         claude_feedback(
             "📝 GIT STATUS CHECKED\n\n"
             "Common next steps:\n"
@@ -230,7 +331,8 @@ def handle_post_bash_enhanced(json_input):
             "2. Commit changes: git commit -m 'message'\n"
             "3. Create PR: mcp__github__create_pr\n"
             "4. Use TodoWrite to track commit tasks\n\n"
-            "Ready to commit changes?"
+            "Ready to commit changes?",
+            feedback_key=git_key
         )
     
     # All good - proceed silently
@@ -242,6 +344,33 @@ def handle_pre_task_enhanced(json_input):
     prompt = json_input.get('tool_input', {}).get('prompt', '')
     
     logger.info(f"Pre-task hook: preparing task: {task_desc[:100]}...")
+    
+    # 🚀 DELIVER DEFERRED FEEDBACK: Claude can now see and act on queued suggestions!
+    if has_queued_feedback():
+        feedback_message = deliver_queued_feedback()
+        if feedback_message:
+            claude_feedback(
+                feedback_message,
+                block=True  # SAFE: Pre-task is perfect timing for Claude to see and act on feedback
+            )
+    
+    # Generate unique task ID for monitoring
+    task_id = f"task_{int(time.time())}_{hash(prompt) % 10000}"
+    
+    # Start Task coordination monitoring
+    try:
+        import subprocess
+        subprocess.run([
+            'python', 
+            str(Path(__file__).parent / 'task_coordination_monitor.py'),
+            'start',
+            '--task-id', task_id,
+            '--description', task_desc,
+            '--prompt', prompt
+        ], timeout=10, capture_output=True)
+        logger.info(f"Task monitoring started for: {task_id}")
+    except Exception as e:
+        logger.warning(f"Could not start task monitoring: {e}")
     
     # Critical: Check if agent has coordination instructions
     required_hooks = [
@@ -256,20 +385,23 @@ def handle_pre_task_enhanced(json_input):
     if missing_hooks:
         missing_list = '\n'.join(f"• {hook}" for hook in missing_hooks)
         claude_feedback(
-            "🚨 AGENT MISSING COORDINATION INSTRUCTIONS!\n\n"
+            f"🚨 AGENT MISSING COORDINATION INSTRUCTIONS!\n\n"
+            f"Task ID: {task_id}\n"
             f"This Task agent is missing required coordination hooks:\n{missing_list}\n\n"
             "MANDATORY: Every Task agent MUST include:\n"
             "1. START: npx claude-flow@alpha hooks pre-task --description '[task]'\n"
             "2. DURING: npx claude-flow@alpha hooks post-edit --file '[file]'\n"
             "3. SHARE: npx claude-flow@alpha hooks notification --message '[decision]'\n"
             "4. END: npx claude-flow@alpha hooks post-task --task-id '[task]'\n\n"
-            "Please add these coordination instructions to the Task prompt!"
+            "IMMEDIATE ACTION: Terminate this Task and re-spawn with proper coordination!\n\n"
+            "This prevents incomplete agent workflows and broken swarm coordination."
         )
     
     # Check for parallel execution violation
     if 'wait for' in prompt.lower() or 'after' in prompt.lower():
         claude_feedback(
-            "⚠️ SEQUENTIAL EXECUTION DETECTED IN TASK\n\n"
+            f"⚠️ SEQUENTIAL EXECUTION DETECTED IN TASK\n\n"
+            f"Task ID: {task_id}\n"
             "Task agents should work in PARALLEL, not sequentially.\n\n"
             "Instead of: 'Wait for X then do Y'\n"
             "Use: 'Do Y with coordination via hooks'\n\n"
@@ -277,11 +409,25 @@ def handle_pre_task_enhanced(json_input):
             "Restructure this task for parallel execution?"
         )
     
+    # Store task ID for later validation
+    try:
+        with open(Path(__file__).parent / 'cache' / 'current_task_id.txt', 'w') as f:
+            f.write(task_id)
+    except Exception as e:
+        logger.warning(f"Could not store task ID: {e}")
+    
     # All good - proceed
     return 0
 
 def handle_post_edit_enhanced(json_input):
-    """Enhanced post-edit hook with intelligent suggestions"""
+    """
+    Enhanced post-edit hook with intelligent suggestions
+    
+    🚨 CRITICAL SAFETY FIX: All feedback is now NON-BLOCKING (block=False) to prevent
+    API errors that break tool_use/tool_result sequences. Previously, blocking feedback
+    with prompts like "Run these validations now?" could interrupt Claude's tool execution
+    and cause 400 API errors: "tool_use ids found without tool_result blocks".
+    """
     file_path = json_input.get('tool_input', {}).get('file_path', '')
     
     if not file_path:
@@ -289,51 +435,64 @@ def handle_post_edit_enhanced(json_input):
     
     logger.info(f"Post-edit hook: file edited: {file_path}")
     
-    # Check file type and suggest next steps
+    # Create feedback key to prevent duplicates
+    feedback_key = feedback_state.create_feedback_key('post-edit-enhanced', file_path)
+    
+    # Check if we should provide feedback for this file
+    if not feedback_state.should_provide_feedback(feedback_key):
+        logger.debug(f"Skipping duplicate post-edit feedback for: {file_path}")
+        return 0
+    
+    # Mark feedback as provided BEFORE calling claude_feedback to prevent re-entry
+    feedback_state.mark_feedback_provided(feedback_key)
+    
+    # Queue feedback for deferred delivery (SAFE: No API breaks, Claude will see it in pre-tool-use)
     if file_path.endswith(('.js', '.ts', '.tsx')):
-        claude_feedback(
+        queue_feedback(
             f"📝 JAVASCRIPT FILE MODIFIED: {file_path}\n\n"
-            "Recommended actions:\n"
-            "1. Run linting: npm run lint\n"
-            "2. Run tests: npm test\n"
-            "3. Check TypeScript: npm run type-check\n"
-            "4. Consider adding tests if this is new functionality\n\n"
-            "Use mcp__zen__testgen for comprehensive test generation.\n\n"
-            "Run these validations now?"
+            "Recommended validation commands:\n"
+            "• npm run lint (code quality)\n"
+            "• npm test (test coverage)\n"
+            "• npm run type-check (TypeScript)\n\n"
+            "Consider mcp__zen__testgen for comprehensive test generation.",
+            priority="normal",
+            source="post-edit-js"
         )
     
     elif file_path.endswith(('.py',)):
-        claude_feedback(
+        queue_feedback(
             f"🐍 PYTHON FILE MODIFIED: {file_path}\n\n"
-            "Recommended actions:\n"
-            "1. Run linting: flake8 or black\n"
-            "2. Run tests: pytest\n"
-            "3. Check typing: mypy\n"
-            "4. Update requirements if dependencies changed\n\n"
-            "Use mcp__zen__testgen for test coverage analysis.\n\n"
-            "Run these validations now?"
+            "Recommended validation commands:\n"
+            "• flake8 or black (linting)\n"
+            "• pytest (testing)\n"
+            "• mypy (type checking)\n\n"
+            "Consider mcp__zen__testgen for test coverage analysis.",
+            priority="normal",
+            source="post-edit-python"
         )
     
     elif file_path.endswith(('.json', '.yaml', '.yml')):
-        claude_feedback(
+        queue_feedback(
             f"⚙️ CONFIG FILE MODIFIED: {file_path}\n\n"
-            "Config changes detected. Consider:\n"
-            "1. Validate syntax\n"
-            "2. Restart relevant services\n"
-            "3. Update documentation\n"
-            "4. Test configuration changes\n\n"
-            "Would you like me to validate this configuration?"
+            "Configuration change detected. Recommendations:\n"
+            "• Validate syntax\n"
+            "• Restart relevant services\n"
+            "• Update documentation\n"
+            "• Test configuration impact",
+            priority="high",  # Config changes are important
+            source="post-edit-config"
         )
     
     elif file_path.endswith(('.md', '.rst', '.txt')):
-        claude_feedback(
+        queue_feedback(
             f"📚 DOCUMENTATION MODIFIED: {file_path}\n\n"
-            "Documentation updated! Consider:\n"
-            "1. Check for broken links\n"
-            "2. Verify code examples work\n"
-            "3. Update table of contents if needed\n"
-            "4. Consider mcp__github__create_pr for review\n\n"
-            "Ready to publish documentation changes?"
+            "Documentation update detected. Recommendations:\n"
+            "• Check for broken links\n"
+            "• Verify code examples\n"
+            "• Update table of contents\n"
+            "• Consider mcp__github__create_pr for review",
+            priority="low",  # Documentation is less urgent
+            source="post-edit-docs"
         )
     
     # All good - proceed silently
@@ -427,22 +586,68 @@ def handle_notification_enhanced(json_input):
     return 0
 
 def handle_subagent_stop_enhanced(json_input):
-    """Enhanced subagent-stop hook for agent coordination"""
+    """Enhanced subagent-stop hook for agent coordination with Task validation"""
     logger.info("Subagent-stop hook: task agent completed")
     
-    # Check if other agents are still working
-    # In real implementation, would check Claude Flow swarm status
+    # Get current task ID
+    task_id = None
+    try:
+        task_id_file = Path(__file__).parent / 'cache' / 'current_task_id.txt'
+        if task_id_file.exists():
+            with open(task_id_file, 'r') as f:
+                task_id = f.read().strip()
+    except Exception as e:
+        logger.warning(f"Could not retrieve task ID: {e}")
     
-    claude_feedback(
-        "🤖 SUBAGENT COMPLETED\n\n"
-        "Agent coordination checkpoint:\n"
-        "1. Storing results in Claude Flow memory\n"
-        "2. Notifying other agents of completion\n"
-        "3. Checking for dependent tasks\n"
-        "4. Updating coordination state\n\n"
-        "Use mcp__claude-flow__swarm_status to check overall progress.\n\n"
-        "Continue with coordinated execution?"
-    )
+    # Validate Task coordination completion
+    if task_id:
+        try:
+            import subprocess
+            result = subprocess.run([
+                'python',
+                str(Path(__file__).parent / 'task_coordination_monitor.py'),
+                'validate',
+                '--task-id', task_id
+            ], timeout=15, capture_output=True, text=True)
+            
+            if result.returncode == 2:
+                # Task monitoring detected incomplete coordination - feedback already sent to Claude
+                logger.error(f"Task {task_id} had incomplete coordination")
+                return 2  # Pass through the error
+            elif result.returncode == 0:
+                logger.info(f"Task {task_id} completed successfully")
+                print(result.stdout)  # Show success message to user
+            
+        except Exception as e:
+            logger.warning(f"Could not validate task coordination: {e}")
+            
+            # Fallback: Provide generic coordination feedback
+            claude_feedback(
+                f"⚠️ TASK COMPLETION VALIDATION FAILED\n\n"
+                f"Task ID: {task_id or 'unknown'}\n"
+                "Could not verify if Task agent completed full coordination workflow.\n\n"
+                "RECOMMENDED ACTIONS:\n"
+                "1. Check if all coordination hooks were executed\n"
+                "2. Verify Claude Flow memory was updated\n"
+                "3. Use mcp__claude-flow__swarm_status to check coordination state\n"
+                "4. Re-spawn Task agents if coordination is incomplete\n\n"
+                "Ensure proper swarm coordination for reliable execution!"
+            )
+    else:
+        # No task ID found - this is suspicious
+        claude_feedback(
+            "❌ TASK MONITORING MISSING\n\n"
+            "A Task agent completed but no monitoring record was found.\n\n"
+            "This suggests the Task was spawned without proper coordination setup!\n\n"
+            "CRITICAL: All Task agents must:\n"
+            "1. Include coordination hook instructions\n"
+            "2. Be monitored from start to completion\n"
+            "3. Execute full coordination workflow\n"
+            "4. Report completion status\n\n"
+            "Use proper Task spawning with coordination monitoring!"
+        )
+    
+    return 0
 
 def handle_precompact_enhanced(json_input):
     """Enhanced precompact hook with preparation guidance"""
@@ -496,17 +701,37 @@ def handle_post_bash(json_input):
     result = json_input.get('tool_result', {})
     exit_code = result.get('exitCode', 0)
     
-    # Check for critical issues first (with Claude visibility)
-    if exit_code != 0:
-        return handle_post_bash_enhanced(json_input)
-    
-    if 'test' in command.lower() or 'git status' in command:
-        return handle_post_bash_enhanced(json_input)
-    
-    # Otherwise use original handler (user-visible suggestions)
     logger.info(f"Post-bash hook: command completed: {command[:100]}...")
     
-    # Track claude-flow orchestration commands
+    # Create feedback key to prevent duplicates for this specific command
+    feedback_key = feedback_state.create_feedback_key('post-bash-wrapper', f"{command[:50]}:{exit_code}")
+    
+    # Skip if we've already provided feedback for this exact command and result
+    if not feedback_state.should_provide_feedback(feedback_key):
+        logger.debug(f"Skipping duplicate post-bash feedback for: {command[:50]}")
+        return 0
+    
+    # Check for critical issues first (with Claude visibility)
+    if exit_code != 0:
+        feedback_state.mark_feedback_provided(feedback_key)
+        return handle_post_bash_enhanced(json_input)
+    
+    # Only provide test feedback for ACTUAL test commands, not git operations
+    if any(test_cmd in command.lower() for test_cmd in ['npm test', 'pytest', 'cargo test', 'jest', 'mocha', 'vitest']):
+        feedback_state.mark_feedback_provided(feedback_key)
+        return handle_post_bash_enhanced(json_input)
+    
+    # Only provide git feedback for actual git status command
+    if command.strip() == 'git status':
+        feedback_state.mark_feedback_provided(feedback_key)
+        return handle_post_bash_enhanced(json_input)
+    
+    # For git operations like remote add, push, etc. - just log silently
+    if 'git' in command and command.strip() != 'git status':
+        # Don't spam feedback for git operations
+        return 0
+    
+    # Track claude-flow orchestration commands (no duplicate prevention needed)
     if 'claude-flow' in command and 'hooks' in command:
         print("""### ✅ Coordination Hook Executed
 
@@ -528,14 +753,25 @@ def handle_post_edit(json_input):
     """Wrapper that adds Claude visibility to original handler"""
     file_path = json_input.get('tool_input', {}).get('file_path', '')
     
+    # Create feedback key to prevent duplicate processing
+    feedback_key = feedback_state.create_feedback_key('post-edit-wrapper', file_path)
+    
+    # Skip if we've already processed this file recently
+    if not feedback_state.should_provide_feedback(feedback_key):
+        logger.debug(f"Skipping duplicate post-edit processing for: {file_path}")
+        return 0
+    
     # Check for critical file types that need immediate action
     if file_path.endswith(('.py', '.js', '.ts', '.tsx', '.json', '.yaml', '.yml')):
         return handle_post_edit_enhanced(json_input)
     
+    # Mark as processed to prevent duplicates
+    feedback_state.mark_feedback_provided(feedback_key)
+    
     # Otherwise use original handler
     logger.info(f"Post-edit hook: file edited: {file_path}")
     
-    # Provide context-aware suggestions based on file type
+    # Provide context-aware suggestions based on file type (NON-BLOCKING)
     file_ext = file_path.split('.')[-1] if '.' in file_path else ''
     
     suggestions_map = {
